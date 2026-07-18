@@ -13,6 +13,8 @@ typealias FSEventStream = SFSEventStream
 
 public class SystemConfigurationWatcher {
   var configuration: Configuration
+  /// Owned FSEventStream; must outlive init and be released in deinit (raw OpaquePointer, not ARC).
+  private var stream: FSEventStream?
 
   static let globalPreferencesPath: String = {
     let libraryURL = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first
@@ -24,7 +26,7 @@ public class SystemConfigurationWatcher {
   init(configuration: inout Configuration) {
     self.configuration = configuration
 
-    let stream = FSEventStream.create(
+    let streamOpt = FSEventStream.create(
       paths: [SystemConfigurationWatcher.globalPreferencesPath],
       eventId: FSEventStream.EventIdSinceNow, latancy: 5.0,
       flags: FSEventStream.CreateFlag.fileEvents
@@ -32,9 +34,21 @@ public class SystemConfigurationWatcher {
       [weak self] _, _ in
       NSLog("Reloading system configuration by watcher")
       self?.reloadConfiguration()
-    }!
+    }
+    guard let stream = streamOpt else {
+      NSLog("Failed to create FSEventStream for system configuration watcher")
+      return
+    }
     stream.schedule(runLoop: .current, mode: .default)
     stream.start()
+    self.stream = stream
+  }
+
+  deinit {
+    guard let stream = stream else { return }
+    stream.stop()
+    stream.invalidate()
+    stream.release()
   }
 
   public func reloadConfiguration() {

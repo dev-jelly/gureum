@@ -10,13 +10,13 @@ SCRIPT_DIR="$(dirname "$0")"
 # shellcheck source=tools/ready.sh
 . "${SCRIPT_DIR}/ready.sh" || exit $?
 
-ZIP_PATH=$1/${PACKAGE_NAME}.zip
-PKG_PATH=$1/${PACKAGE_NAME}.pkg
-
-if [ ! "$1" ]; then
+if [ $# -lt 1 ] || [ -z "$1" ]; then
     echo "run archive and put archive path as 1st argument" >&2
     exit 1
 fi
+
+ZIP_PATH="$1/${PACKAGE_NAME}.zip"
+PKG_PATH="$1/${PACKAGE_NAME}.pkg"
 
 if [ ! -e "$1" ]; then
     echo "unexisting path: $1" >&2
@@ -30,29 +30,40 @@ if [ ! -e "$ZIP_PATH" ] || [ ! -e "$PKG_PATH" ]; then
     exit 1
 fi
 
-echo "Apple login ID is required to notarize products"
-echo -n "Apple ID> "
-
-read -r apple_id
+if [ -z "${NOTARY_KEYCHAIN_PROFILE:-}" ]; then
+    echo "NOTARY_KEYCHAIN_PROFILE is required" >&2
+    exit 1
+fi
 
 echo "Notarizing app..."
-cmd=(xcrun altool --notarize-app -t osx --primary-bundle-id org.youknowone.inputmethod.Gureum \
-    -u "$apple_id" -p @keychain:developer.apple.com -itc_provider 9384JEL3M9 -f "${ZIP_PATH}")
+cmd=(xcrun notarytool submit "${ZIP_PATH}" \
+    --keychain-profile "${NOTARY_KEYCHAIN_PROFILE}" --wait)
 echo "${cmd[@]}"
-if ! "${cmd[@]}"; then
-    exit_code=$?
-    echo "Signing app failed: ${ZIP_PATH}" >&2
-    exit $exit_code
+"${cmd[@]}"
+exit_code=$?
+if [ "$exit_code" -ne 0 ]; then
+    echo "Notarizing app failed: ${ZIP_PATH}" >&2
+    exit "$exit_code"
 fi
 
 echo "Notarizing pkg..."
-cmd=(xcrun altool --notarize-app -t osx --primary-bundle-id org.youknowone.inputmethod.Gureum \
-    -u "$apple_id" -p @keychain:developer.apple.com -f "$PKG_PATH")
+cmd=(xcrun notarytool submit "$PKG_PATH" \
+    --keychain-profile "${NOTARY_KEYCHAIN_PROFILE}" --wait)
 echo "${cmd[@]}"
-if ! "${cmd[@]}"; then
-    exit_code=$?
-    echo "Signing pkg failed: ${PKG_PATH}" >&2
-    exit $exit_code
+"${cmd[@]}"
+exit_code=$?
+if [ "$exit_code" -ne 0 ]; then
+    echo "Notarizing pkg failed: ${PKG_PATH}" >&2
+    exit "$exit_code"
 fi
 
-mv "$PKG_PATH" ~/Downloads/
+echo "Stapling pkg..."
+xcrun stapler staple "$PKG_PATH"
+exit_code=$?
+if [ "$exit_code" -ne 0 ]; then
+    echo "Stapling pkg failed: ${PKG_PATH}" >&2
+    exit "$exit_code"
+fi
+
+mkdir -p ~/Downloads
+mv -f "$PKG_PATH" ~/Downloads/

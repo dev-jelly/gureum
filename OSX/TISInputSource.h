@@ -46,7 +46,8 @@ NS_ASSUME_NONNULL_BEGIN
     TISInputSourceRef _ref;
 }
 
-- (id)propertyForKey:(NSString *)key;
+- (instancetype)init NS_UNAVAILABLE;
+- (nullable id)propertyForKey:(NSString *)key;
 
 @property(nonatomic,readonly) TISInputSourceRef ref;
 @property(nonatomic,readonly) NSString *category, *type;
@@ -55,12 +56,13 @@ NS_ASSUME_NONNULL_BEGIN
 @property(nonatomic,readonly) NSString *identifier, *bundleIdentifier, *inputModeIdentifier;
 @property(nonatomic,readonly) NSString *localizedName;
 @property(nonatomic,readonly) NSArray *languages;
-@property(nonatomic,readonly) NSData *layoutData;
-@property(nonatomic,readonly) NSURL *iconImageURL;
+@property(nullable,nonatomic,readonly) NSData *layoutData;
+@property(nullable,nonatomic,readonly) NSURL *iconImageURL;
 
-+ (instancetype)sourceForLanguage:(NSString *)language;
-+ (void)setInputMethodKeyboardLayoutOverride:(TISInputSource *)source;
-+ (TISInputSource *)inputMethodKeyboardLayoutOverride;
++ (nullable instancetype)sourceForLanguage:(NSString *)language;
++ (BOOL)setInputMethodKeyboardLayoutOverride:(TISInputSource *)source
+                                       error:(NSError * _Nullable * _Nullable)error;
++ (nullable TISInputSource *)inputMethodKeyboardLayoutOverride;
 
 @end
 

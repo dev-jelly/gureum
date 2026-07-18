@@ -121,7 +121,8 @@ public class Configuration: UserDefaults {
   /// 마지막 한글 입력 모드.
   public var lastHangulInputMode: String {
     get {
-      string(forKey: ConfigurationName.lastHangulInputMode)!
+      string(forKey: ConfigurationName.lastHangulInputMode)
+        ?? "org.youknowone.inputmethod.Gureum.han2"
     }
     set {
       set(newValue, forKey: ConfigurationName.lastHangulInputMode)
@@ -131,7 +132,8 @@ public class Configuration: UserDefaults {
   /// 마지막 로마자 입력 모드.
   public var lastRomanInputMode: String {
     get {
-      string(forKey: ConfigurationName.lastRomanInputMode)!
+      string(forKey: ConfigurationName.lastRomanInputMode)
+        ?? "org.youknowone.inputmethod.Gureum.qwerty"
     }
     set {
       set(newValue, forKey: ConfigurationName.lastRomanInputMode)
@@ -151,7 +153,8 @@ public class Configuration: UserDefaults {
   /// 기본 키보드 레이아웃.
   public var overridingKeyboardName: String {
     get {
-      string(forKey: ConfigurationName.overridingKeyboardName)!
+      string(forKey: ConfigurationName.overridingKeyboardName)
+        ?? "com.apple.keylayout.ABC"
     }
     set {
       set(newValue, forKey: ConfigurationName.overridingKeyboardName)

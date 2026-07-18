@@ -60,16 +60,21 @@ extension InputController {
         if !info.update.description.isEmpty {
           message += " 업데이트 요약은 '\(info.update.description)' 입니다."
         }
-        if let url = URL(string: info.update.url) {
-          NSWorkspace.shared.open(url)
-        } else {
-          message += " 현재 업데이트 링크를 찾을 수 없습니다. 버그 리포트를 부탁드립니다."
-        }
         let alert = NSAlert()
         alert.messageText = "구름 입력기 \(title) 확인"
-        alert.addButton(withTitle: "확인")
         alert.informativeText = message
-        alert.runModal()
+        if let url = URL(string: info.update.url) {
+          alert.addButton(withTitle: "업데이트 받기")
+          alert.addButton(withTitle: "나중에")
+          if alert.runModal() == .alertFirstButtonReturn {
+            NSWorkspace.shared.open(url)
+          }
+        } else {
+          message += " 현재 업데이트 링크를 찾을 수 없습니다. 버그 리포트를 부탁드립니다."
+          alert.informativeText = message
+          alert.addButton(withTitle: "확인")
+          alert.runModal()
+        }
       }
     }
   }
@@ -85,31 +90,31 @@ extension InputController {
   }
 
   @IBAction func openWebsite(_: Any) {
-    let url = URL(string: "http://gureum.io")!
+    let url = URL(string: "https://gureum.io")!
     NSWorkspace.shared.open(url)
     answers.logMenu(name: "website")
   }
 
   @IBAction func openWebsiteHelp(_: Any) {
-    let url = URL(string: "http://dan.gureum.io")!
+    let url = URL(string: "https://dan.gureum.io")!
     NSWorkspace.shared.open(url)
     answers.logMenu(name: "website-help")
   }
 
   @IBAction func openWebsiteSource(_: Any) {
-    let url = URL(string: "http://ssi.gureum.io")!
+    let url = URL(string: "https://ssi.gureum.io")!
     NSWorkspace.shared.open(url)
     answers.logMenu(name: "website-source")
   }
 
   @IBAction func openWebsiteIssues(_: Any) {
-    let url = URL(string: "http://meok.gureum.io")!
+    let url = URL(string: "https://meok.gureum.io")!
     NSWorkspace.shared.open(url)
     answers.logMenu(name: "website-issues")
   }
 
   @IBAction func openWebsiteDonation(_: Any) {
-    let url = URL(string: "http://donation.gureum.io")!
+    let url = URL(string: "https://donation.gureum.io")!
     NSWorkspace.shared.open(url)
     answers.logMenu(name: "website-donation")
   }

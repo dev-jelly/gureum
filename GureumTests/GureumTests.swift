@@ -12,7 +12,7 @@ import XCTest
 
 @testable import GureumCore
 
-private var lastNotification: NSUserNotification!
+private var lastNotification: NSUserNotification?
 
 extension NSUserNotificationCenter {
   func deliver(_ notification: NSUserNotification) {
@@ -24,9 +24,11 @@ class GureumTests: XCTestCase {
   static let domainName = "org.youknowone.Gureum.test"
   lazy var moderate: VirtualApp = ModerateApp()
   // lazy var xcode: VirtualApp = XcodeApp()
-  lazy var terminal: VirtualApp! = nil
+  // TODO(H-1): TerminalApp/GreedyApp re-enable for terminal & greedy-client regression coverage.
   // lazy var terminal: VirtualApp = TerminalApp()
   // lazy var greedy: VirtualApp = GreedyApp()
+  // `terminal` stays nil so existing `if app == terminal` guards remain no-op dead branches.
+  lazy var terminal: VirtualApp! = nil
   lazy var apps: [VirtualApp] = [moderate]
 
   override class func setUp() {
@@ -41,7 +43,7 @@ class GureumTests: XCTestCase {
   override func setUp() {
     super.setUp()
     // Put setup code here. This method is called before the invocation of each test method in the class.
-
+    lastNotification = nil
     Configuration.shared.removePersistentDomain(forName: GureumTests.domainName)
   }
 
@@ -50,31 +52,33 @@ class GureumTests: XCTestCase {
     super.tearDown()
   }
 
-  func testPreferencePane() {
-    let path = Bundle.main.path(forResource: "Preferences", ofType: "prefPane")
-    let bundle = NSPrefPaneBundle(path: path)!
+  func testPreferencePane() throws {
+    let path = try XCTUnwrap(Bundle.main.path(forResource: "Preferences", ofType: "prefPane"))
+    let bundle = try XCTUnwrap(NSPrefPaneBundle(path: path))
     let loaded = bundle.instantiatePrefPaneObject()
     XCTAssertTrue(loaded)
   }
 
-  func testNotifyUpdate() {
-    let data = """
+  func testNotifyUpdate() throws {
+    let data = try XCTUnwrap(
+      """
       {
           "version": "1.10.0",
           "description": "Mojave 대응을 포함한 대형 업데이트",
           "url": "https://github.com/gureum/gureum/releases/tag/1.10.0"
       }
-      """.data(using: .utf8)
-    let update = try! JSONDecoder().decode(UpdateManager.UpdateInfo.self, from: data!)
+      """.data(using: .utf8))
+    let update = try JSONDecoder().decode(UpdateManager.UpdateInfo.self, from: data)
 
     let versionInfo = UpdateManager.VersionInfo(update: update, experimental: true)
     UpdateManager.notifyUpdate(info: versionInfo)
+    let notification = try XCTUnwrap(lastNotification)
     XCTAssertEqual(
       "최신 버전: 1.10.0 현재 버전: \(Bundle.main.version ?? "-")\nMojave 대응을 포함한 대형 업데이트",
-      lastNotification.informativeText)
+      notification.informativeText)
     XCTAssertEqual(
       ["url": "https://github.com/gureum/gureum/releases/tag/1.10.0"],
-      lastNotification.userInfo as! [String: String])
+      notification.userInfo as! [String: String])
   }
 
   func testLayoutChange() {
@@ -84,10 +88,24 @@ class GureumTests: XCTestCase {
       app.controller.setValue(
         "org.youknowone.inputmethod.Gureum.qwerty", forTag: kTextServiceInputModePropertyTag,
         client: app.client)
+      // MockInputController.inputFlags는 토글이므로 qwerty → lastHangul(han2)
       app.inputFlags(.capsLock)
+      XCTAssertTrue(
+        app.controller.receiver.composer.inputMode.hasSuffix("han2"),
+        "mode: \(app.controller.receiver.composer.inputMode), app: \(app)")
 
+      // exchange 1회: hangul → roman(qwerty), 공백 미삽입
       app.inputText(" ", key: .space, modifiers: .shift)
+      XCTAssertTrue(
+        app.controller.receiver.composer.inputMode.hasSuffix("qwerty"),
+        "mode: \(app.controller.receiver.composer.inputMode), app: \(app)")
+      XCTAssertEqual("", app.client.string, "buffer: \(app.client.string), app: \(app)")
+
+      // exchange 2회: roman → hangul(han2), 공백 미삽입
       app.inputText(" ", key: .space, modifiers: .shift)
+      XCTAssertTrue(
+        app.controller.receiver.composer.inputMode.hasSuffix("han2"),
+        "mode: \(app.controller.receiver.composer.inputMode), app: \(app)")
       XCTAssertEqual("", app.client.string, "buffer: \(app.client.string), app: \(app)")
     }
   }
@@ -460,7 +478,7 @@ class GureumTests: XCTestCase {
     for app in apps {
       app.client.string = ""
       app.controller.setValue(
-        "org.youknowone.inputmethod.Gureum.han3final", forTag: kTextServiceInputModePropertyTag,
+        GureumInputSource.han3Final.rawValue, forTag: kTextServiceInputModePropertyTag,
         client: app.client)
       app.inputKey(.ansiK, modifiers: .shift)
       XCTAssertEqual("2", app.client.string, "buffer: \(app.client.string) app: \(app)")
@@ -483,13 +501,10 @@ class GureumTests: XCTestCase {
       XCTAssertEqual("mfskgw", app.client.string, "buffer: \(app.client.string) app: \(app)")
       XCTAssertEqual("", app.client.markedString(), "buffer: \(app.client.string) app: \(app)")
       app.inputText(" ", key: .space)
-
-      app.inputText("", key: .leftArrow)
-      app.inputText("", key: .leftArrow)
-      app.inputText("", key: .leftArrow)
-      app.inputText("", key: .leftArrow)
-      app.inputText("", key: .leftArrow)
-      app.inputText("", key: .leftArrow)
+      XCTAssertEqual("mfskgw ", app.client.string, "buffer: \(app.client.string) app: \(app)")
+      XCTAssertEqual("", app.client.markedString(), "buffer: \(app.client.string) app: \(app)")
+      // TODO: 블록 선택(shift+left) 검증 미구현 — ModerateApp이 커서/시프트 선택을 시뮬하지 않음.
+      // 역사적 ObjC 의도(단언 주석 처리됨): shift+left ×6 후 selectedString == "fskgw "
     }
   }
 
@@ -737,6 +752,10 @@ class GureumTests: XCTestCase {
       XCTAssertFalse(processed)
       XCTAssertEqual("ㅎ", app.client.string, "buffer: \(app.client.string) app: \(app)")
       XCTAssertTrue(app.controller.receiver.composer.inputMode.hasSuffix("qwerty"))
+
+      // Escape 전환 후 후속 입력이 로마자로 라우팅되는지 검증
+      app.inputKey(.ansiA)
+      XCTAssertEqual("ㅎa", app.client.string, "buffer: \(app.client.string) app: \(app)")
     }
   }
 
@@ -757,8 +776,12 @@ class GureumTests: XCTestCase {
       XCTAssertEqual("ㅎ", app.client.string, "buffer: \(app.client.string) app: \(app)")
       XCTAssertTrue(app.controller.receiver.composer.inputMode.hasSuffix("qwerty"))
 
+      // Ctrl+[ 전환 후 후속 입력이 로마자로 라우팅되는지 검증
+      app.inputKey(.ansiA)
+      XCTAssertEqual("ㅎa", app.client.string, "buffer: \(app.client.string) app: \(app)")
+
       app.inputKey(.ansiLeftBracket, modifiers: [.control, .shift])
-      XCTAssertEqual("ㅎ", app.client.string, "buffer: \(app.client.string) app: \(app)")
+      XCTAssertEqual("ㅎa", app.client.string, "buffer: \(app.client.string) app: \(app)")
       XCTAssertTrue(app.controller.receiver.composer.inputMode.hasSuffix("qwerty"))
     }
   }
@@ -831,6 +854,68 @@ class GureumTests: XCTestCase {
   //            XCTAssertEqual("ㄱ", app.client.markedString(), "buffer: \(app.client.string) app: \(app)")
   //        }
   //    }
+}
+
+private final class BlockingSearchSource: SearchSource {
+  let started = DispatchSemaphore(value: 0)
+  let release = DispatchSemaphore(value: 0)
+  private let value: String
+
+  init(value: String) {
+    self.value = value
+  }
+
+  func collect(_: String, workItem _: DispatchWorkItem!) -> [ScoredCandidate] {
+    started.signal()
+    release.wait()
+    return [(candidate: Candidate(value: value, description: value), score: 0)]
+  }
+}
+
+private struct ImmediateSearchSource: SearchSource {
+  let value: String
+
+  func collect(_: String, workItem _: DispatchWorkItem!) -> [ScoredCandidate] {
+    return [(candidate: Candidate(value: value, description: value), score: 0)]
+  }
+}
+
+final class SearchComposerGenerationTests: XCTestCase {
+  private let timeout = DispatchTimeInterval.seconds(5)
+
+  func testSupersededSearchCannotPublish() {
+    let queue = DispatchQueue(
+      label: "org.gureum.tests.search-generation", attributes: .concurrent)
+    let composer = SearchComposer(searchQueue: queue)
+    let slowSource = BlockingSearchSource(value: "old")
+
+    let slowWorkItem = composer.startSearch(keyword: "old", in: slowSource)
+    XCTAssertEqual(slowSource.started.wait(timeout: .now() + timeout), .success)
+
+    let currentWorkItem = composer.startSearch(
+      keyword: "new", in: ImmediateSearchSource(value: "new"))
+    XCTAssertEqual(currentWorkItem.wait(timeout: .now() + timeout), .success)
+    XCTAssertTrue(composer.candidates?.first?.string.hasPrefix("new:") == true)
+
+    slowSource.release.signal()
+    XCTAssertEqual(slowWorkItem.wait(timeout: .now() + timeout), .success)
+    XCTAssertTrue(composer.candidates?.first?.string.hasPrefix("new:") == true)
+  }
+
+  func testCancelledSearchCannotPublish() {
+    let queue = DispatchQueue(
+      label: "org.gureum.tests.search-cancellation", attributes: .concurrent)
+    let composer = SearchComposer(searchQueue: queue)
+    let slowSource = BlockingSearchSource(value: "cancelled")
+
+    let slowWorkItem = composer.startSearch(keyword: "cancelled", in: slowSource)
+    XCTAssertEqual(slowSource.started.wait(timeout: .now() + timeout), .success)
+
+    composer.cancelSearch()
+    slowSource.release.signal()
+    XCTAssertEqual(slowWorkItem.wait(timeout: .now() + timeout), .success)
+    XCTAssertNil(composer.candidates)
+  }
 }
 
 class Han3FinalNoShiftTests: XCTestCase {

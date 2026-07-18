@@ -26,6 +26,7 @@ class IOKitty {
   let service: SIOService
   let connect: SIOConnect
   let manager: IOHIDManager
+  private var opened = false
   private var defaultCapsLockState: Bool = false
   var capsLockDate: Date?
   var rollback: (() -> Void)?
@@ -92,9 +93,17 @@ class IOKitty {
               _self.rollback?()
               _self.rollback = nil
             } else {
-              // short pressed
-              _ = _self.connect.setModifierLock(
+              // short pressed: restore LED to remembered state
+              if case .failure(let error) = _self.connect.setModifierLock(
                 selector: .capsLock, state: _self.defaultCapsLockState)
+              {
+                dlog(true, "IOKitty: setModifierLock(capsLock) failed: \(error)")
+                // LED may still reflect the OS toggle; align software so later
+                // short/long classification matches hardware.
+                if let actual = try? _self.connect.getModifierLock(selector: .capsLock).get() {
+                  _self.defaultCapsLockState = actual
+                }
+              }
               _self.capsLockDate = nil
             }
           }
@@ -111,15 +120,25 @@ class IOKitty {
         // NSEvent.otherEvent(with: .applicationDefined, location: .zero, modifierFlags: .capsLock, timestamp: 0, windowNumber: 0, context: nil, subtype: 0, data1: 0, data2: 0)!
       }, context: _self.toOpaque())
 
-    manager.schedule(runloop: .current, mode: .default)
+    // Always bind to the main run loop; .current would silently break if IOKitty is first created off-main.
+    manager.schedule(runloop: .main, mode: .default)
     let r = manager.open()
     if r != kIOReturnSuccess {
-      dlog(debugIOKitEvent, "IOHIDManagerOpen failed")
+      // open failed → callbacks never fire. Match service/connect failure: return nil so
+      // InputMethodServer NSLogs and disables CapsLock/right-key toggle. Failable init
+      // does not run deinit — unschedule/unregister manually (close only after successful open).
+      manager.unschedule(runloop: .main, mode: .default)
+      manager.unregisterInputValueCallback()
+      dlog(true, "IOHIDManagerOpen failed: \(r)")
+      return nil
     }
+    opened = true
   }
 
   deinit {
-    manager.unschedule(runloop: .current, mode: .default)
+    // open 실패 시 init에서 이미 unschedule/unregister 했고 manager를 열지 않았으므로 close 금지.
+    guard opened else { return }
+    manager.unschedule(runloop: .main, mode: .default)
     manager.unregisterInputValueCallback()
     let r = manager.close()
     assert(r == 0)
@@ -158,8 +177,8 @@ public class InputMethodServer {
   let server: IMKServer
   //! @property
   let candidates: IMKCandidates
-  //! @brief  입력기가 inputText: 문맥에 있는지 여부를 저장
-  let io: IOKitty
+  //! @brief  CapsLock/우측 토글 키 감지(IOKit). 초기화 실패 시 nil — 핵심 입력과 분리
+  let io: IOKitty?
 
   convenience init() {
     let bundle = Bundle.main
@@ -182,7 +201,10 @@ public class InputMethodServer {
     candidates = IMKCandidates(server: server, panelType: kIMKSingleColumnScrollingCandidatePanel)
     // candidates.setSelectionKeysKeylayout(TISInputSource.currentKeyboardLayout())
 
-    io = IOKitty()!
+    io = IOKitty()
+    if io == nil {
+      NSLog("IOKitty initialization failed; CapsLock/right-key input mode toggle disabled")
+    }
     dlog(debugInputServer, "\t%@", description)
   }
 

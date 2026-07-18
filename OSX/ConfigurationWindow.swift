@@ -26,18 +26,24 @@ final class PreferencePaneViewController: NSViewController {
   }
 
   func viewFromPrefPane() -> NSView {
-    let path = Bundle.main.path(forResource: "Preferences", ofType: "prefPane")
-    let bundle = NSPrefPaneBundle(path: path)!
-    guard bundle.bundle != nil, bundle.bundle.principalClass != nil else {
+    guard let path = Bundle.main.path(forResource: "Preferences", ofType: "prefPane") else {
+      return viewForFailure()
+    }
+    guard let bundle = NSPrefPaneBundle(path: path),
+      bundle.bundle != nil,
+      bundle.bundle.principalClass != nil
+    else {
       return viewForFailure()
     }
     if isAtLeast1015 {
       let pane = NSPreferencePane(bundle: bundle.bundle)
       return pane.loadMainView()
     } else {
-      let loaded = bundle.instantiatePrefPaneObject()
-      assert(loaded)
-      let pane = bundle.prefPaneObject()!
+      guard bundle.instantiatePrefPaneObject(),
+        let pane = bundle.prefPaneObject()
+      else {
+        return viewForFailure()
+      }
       return pane.mainView
     }
   }

@@ -5,9 +5,14 @@ URL = "https://opencollective.com/gureum/members/all.json"
 
 
 def fetch_text(url):
-    http = urllib3.PoolManager()
-    html = http.request("GET", url).data
-    return html
+    http = urllib3.PoolManager(
+        timeout=urllib3.Timeout(connect=5.0, read=10.0),
+        retries=False,
+    )
+    response = http.request("GET", url)
+    if response.status != 200:
+        raise RuntimeError(f"HTTP {response.status} fetching {url}")
+    return response.data.decode("utf-8")
 
 
 def sort_key(user):
@@ -26,8 +31,6 @@ def contributors(text):
 
 
 def summarize(user):
-    import pprint
-
     github_name = None
     if user["name"] == "Guest" and user["profile"].startswith(
         "https://opencollective.com/guest-"
@@ -39,8 +42,14 @@ def summarize(user):
     image_markdown = f'<img src="{user["profile"]}/avatar.png" height="20px" />'
     profile_markdown = f"[{link_name}]({user['profile']}) "
     github_markdown = ""
-    if user["github"]:
-        github_name = user["github"].removeprefix("https://github.com/")
+    github = user.get("github")
+    if github:
+        _gh_prefix = "https://github.com/"
+        github_name = (
+            github[len(_gh_prefix):]
+            if github.startswith(_gh_prefix)
+            else github
+        )
         github_markdown = f"@{github_name}"
 
     user_markdown = f"{image_markdown} {profile_markdown} {github_markdown}"

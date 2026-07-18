@@ -183,7 +183,7 @@ extension GureumComposer {
     enqueueCommitString(delegate.dequeueCommitString())
   }
 
-  func changeLayout(_ layout: ChangeLayout, client sender: Any) -> InputResult {
+  func changeLayout(_ layout: ChangeLayout, client sender: IMKTextInput) -> InputResult {
     var layout = layout
     if layout == .toggle {
       if delegate is RomanComposer {
@@ -219,7 +219,7 @@ extension GureumComposer {
       }
       delegate = searchComposer
       delegate.composerSelected()
-      searchComposer.update(client: sender as! IMKTextInput)
+      searchComposer.update(client: sender)
       return .processed
     default:
       assertionFailure()

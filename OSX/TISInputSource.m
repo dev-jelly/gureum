@@ -60,84 +60,101 @@ NS_ASSUME_NONNULL_BEGIN
     }
 }
 
-- (id)propertyForKey:(NSString *)key {
+- (nullable id)propertyForKey:(NSString *)key {
     return (__bridge id)TISGetInputSourceProperty(self->_ref, (__bridge CFStringRef)key);
 }
 
 - (NSString *)category {
-    return [self propertyForKey:TISPropertyInputSourceCategory];
+    return [self propertyForKey:TISPropertyInputSourceCategory] ?: @"";
 }
 
 - (NSString *)type {
-    return [self propertyForKey:TISPropertyInputSourceType];
+    return [self propertyForKey:TISPropertyInputSourceType] ?: @"";
 }
 
 - (BOOL)ASCIICapable {
-    return CFBooleanGetValue((CFBooleanRef)[self propertyForKey:TISPropertyInputSourceIsASCIICapable]);
+    id value = [self propertyForKey:TISPropertyInputSourceIsASCIICapable];
+    return value != nil ? CFBooleanGetValue((__bridge CFBooleanRef)value) : NO;
 }
 
 - (BOOL)enableCapable {
-    return CFBooleanGetValue((CFBooleanRef)[self propertyForKey:TISPropertyInputSourceIsEnableCapable]);
+    id value = [self propertyForKey:TISPropertyInputSourceIsEnableCapable];
+    return value != nil ? CFBooleanGetValue((__bridge CFBooleanRef)value) : NO;
 }
 
 - (BOOL)selectCapable {
-    return CFBooleanGetValue((CFBooleanRef)[self propertyForKey:TISPropertyInputSourceIsSelectCapable]);
+    id value = [self propertyForKey:TISPropertyInputSourceIsSelectCapable];
+    return value != nil ? CFBooleanGetValue((__bridge CFBooleanRef)value) : NO;
 }
 
 - (BOOL)enabled {
-    return CFBooleanGetValue((CFBooleanRef)[self propertyForKey:TISPropertyInputSourceIsEnabled]);
+    id value = [self propertyForKey:TISPropertyInputSourceIsEnabled];
+    return value != nil ? CFBooleanGetValue((__bridge CFBooleanRef)value) : NO;
 }
 
 - (BOOL)selected {
-    return CFBooleanGetValue((CFBooleanRef)[self propertyForKey:TISPropertyInputSourceIsSelected]);
+    id value = [self propertyForKey:TISPropertyInputSourceIsSelected];
+    return value != nil ? CFBooleanGetValue((__bridge CFBooleanRef)value) : NO;
 }
 
 - (NSString *)identifier {
-    return [self propertyForKey:TISPropertyInputSourceID];
+    return [self propertyForKey:TISPropertyInputSourceID] ?: @"";
 }
 
 - (NSString *)bundleIdentifier {
-    return [self propertyForKey:TISPropertyBundleID];
+    return [self propertyForKey:TISPropertyBundleID] ?: @"";
 }
 
 - (NSString *)inputModeIdentifier {
-    return [self propertyForKey:TISPropertyInputModeID];
+    return [self propertyForKey:TISPropertyInputModeID] ?: @"";
 }
 
 - (NSString *)localizedName {
-    return [self propertyForKey:TISPropertyLocalizedName];
+    return [self propertyForKey:TISPropertyLocalizedName] ?: [self identifier];
 }
 
 - (NSArray *)languages {
-    return [self propertyForKey:TISPropertyInputSourceLanguages];
+    return [self propertyForKey:TISPropertyInputSourceLanguages] ?: @[];
 }
 
-- (NSData *)layoutData {
+- (NSData * _Nullable)layoutData {
     return [self propertyForKey:TISPropertyUnicodeKeyLayoutData];
 }
 
-- (NSURL *)iconImageURL {
+- (NSURL * _Nullable)iconImageURL {
     return [self propertyForKey:TISPropertyIconImageURL];
 }
 
-+ (instancetype)sourceForLanguage:(NSString *)language {
++ (nullable instancetype)sourceForLanguage:(NSString *)language {
     TISInputSourceRef ref = TISCopyInputSourceForLanguage((__bridge CFStringRef)language);
-    return [[self alloc] initWithRef:ref];
-}
-
-+ (void)setInputMethodKeyboardLayoutOverride:(TISInputSource *)source {
-    OSStatus err = TISSetInputMethodKeyboardLayoutOverride(source->_ref);
-    if (err != 0) {
-        @throw [TISInputSourceError errorWithCode:err];
+    if (ref == NULL) {
+        return nil;
     }
+    TISInputSource *obj = [[self alloc] initWithRef:ref];
+    CFRelease(ref);
+    return obj;
 }
 
-+ (TISInputSource *)inputMethodKeyboardLayoutOverride {
++ (BOOL)setInputMethodKeyboardLayoutOverride:(TISInputSource *)source
+                                      error:(NSError * _Nullable * _Nullable)error {
+    OSStatus err = TISSetInputMethodKeyboardLayoutOverride(source->_ref);
+    if (err != noErr) {
+        if (error != NULL) {
+            *error = [TISInputSourceError errorWithCode:err];
+        }
+        return NO;
+    }
+    return YES;
+}
+
++ (TISInputSource * _Nullable)inputMethodKeyboardLayoutOverride {
     TISInputSourceRef ref = TISCopyInputMethodKeyboardLayoutOverride();
     if (ref == nil) {
         return nil;
     }
-    return [[self alloc] initWithRef:ref];
+    TISInputSource *obj = [[self alloc] initWithRef:ref];
+    CFRelease(ref);
+    return obj;
 }
 
 @end

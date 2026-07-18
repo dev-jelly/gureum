@@ -73,15 +73,8 @@ class GureumAppDelegate: NSObject, NSApplicationDelegate, GureumApplicationDeleg
     // IMKServer를 띄워야만 입력기가 동작한다
     _ = InputMethodServer.shared
 
-    answers.logLaunch()
-
-    Timer.scheduledTimer(
-      timeInterval: 3600, target: answers, selector: #selector(AnswersHelper.logUptime),
-      userInfo: nil, repeats: true)
-    // for 10.12+
-    // Timer.scheduledTimer(withTimeInterval: 3600, repeats: true) { _ in
-    //   answers.logUptime()
-    // }
+    // Fabric/Answers 제거 후 AnswersHelper는 no-op stub. 매시간 uptime 타이머·launch 로깅 제거.
+    // (잔여 answers.logMenu / logUpdateNotification 및 AnswersHelper.swift 전면 삭제는 후속 정리)
 
     watcher.reloadConfiguration()
   }

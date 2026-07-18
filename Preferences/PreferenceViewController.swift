@@ -52,7 +52,6 @@ final class PreferenceViewController: NSViewController {
   @IBOutlet private var updateNotificationExperimentalButton: NSButton!
 
   private let configuration = Configuration()
-  private let pane: GureumPreferencePane! = nil
   private let shortcutValidator = GureumShortcutValidator()
   private let backgroundQueue = DispatchQueue.global(qos: .background)
 
@@ -140,21 +139,24 @@ final class PreferenceViewController: NSViewController {
   }
 
   private func runAppleScript(_ script: String) {
+    guard let scriptObject = NSAppleScript(source: script) else {
+      return
+    }
     var error: NSDictionary?
-    if let scriptObject = NSAppleScript(source: script) {
-      let output: NSAppleEventDescriptor = scriptObject.executeAndReturnError(
-        &error
-      )
-      print("pref event descriptor: \(output.stringValue ?? "nil")")
+    // 반환값은 실패 시 nil일 수 있으나(문서), 헤더는 nonnull로 브리지됨.
+    // 반환값을 non-optional로 바인딩·사용하면 크래시하므로 버리고 error만 본다.
+    _ = scriptObject.executeAndReturnError(&error)
+    if let error = error {
+      print("AppleScript failed: \(error)")
     }
   }
 
   // MARK: IBAction
 
   @IBAction private func debug(sender _: NSControl) {
-    print("killing myself")
-    let x = [0]
-    _ = x[1]
+    #if DEBUG
+      fatalError("debug button pressed")
+    #endif
   }
 
   @IBAction private func openKeyboardShortcutsPreference(sender _: NSControl) {
@@ -368,11 +370,10 @@ extension PreferenceViewController: NSComboBoxDataSource {
 
   func comboBox(_: NSComboBox, completedString string: String) -> String? {
     for source in inputSources {
-      if source.localizedName.starts(with: string) {
+      if source.localizedName.range(of: string, options: [.anchored, .caseInsensitive]) != nil {
         return source.localizedName
       }
     }
-    overridingKeyboardNameComboBox.stringValue = ""
-    return ""
+    return nil
   }
 }

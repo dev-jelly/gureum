@@ -36,7 +36,9 @@ final class SearchComposer: Composer {
 
   // MARK: 공통 프로퍼티
 
-  init() {}
+  init(searchQueue: DispatchQueue = DispatchQueue.global(qos: .userInitiated)) {
+    _searchQueue = searchQueue
+  }
 
   // 검색할 소스
   var sourceType: SearchComposer.SourceType? {
@@ -53,15 +55,32 @@ final class SearchComposer: Composer {
     return nil
   }
 
-  public private(set) var candidates: [NSAttributedString]?
+  private var _candidates: [NSAttributedString]?
   private var _bufferedString = ""
   public private(set) var composedString = ""
   public private(set) var commitString = ""
 
   // 검색을 위한 백그라운드 스레드
   private var _searchWorkItem = DispatchWorkItem {}
-  private var _searchQueue = DispatchQueue.global(qos: .userInitiated)
-  private let _searchLock = NSLock()
+  private let _searchQueue: DispatchQueue
+  private var _searchGeneration: UInt64 = 0
+  /// Serializes search generation, the active work item, and candidates.
+  /// Recursive so existing call-site lock scopes stay safe; never hold across main.async (#928).
+  private let _searchLock = NSRecursiveLock()
+
+  /// Thread-safe candidate list. All reads/writes go through `_searchLock`.
+  public private(set) var candidates: [NSAttributedString]? {
+    get {
+      _searchLock.lock()
+      defer { _searchLock.unlock() }
+      return _candidates
+    }
+    set {
+      _searchLock.lock()
+      defer { _searchLock.unlock() }
+      _candidates = newValue
+    }
+  }
 
   var showsCandidateWindow = true
 
@@ -88,6 +107,10 @@ final class SearchComposer: Composer {
   }
 
   func cancelComposition() {
+    // 세션/조합 종료 후에도 검색 completion이 후보 창을 다시 띄우지 않도록 중단한다.
+    cancelSearch()
+    candidates = nil
+
     delegate.cancelComposition()
     delegate.dequeueCommitString()
     commitString.append(composedString)
@@ -155,7 +178,9 @@ final class SearchComposer: Composer {
     switch keyCode {
     case .delete:
       if result == .notProcessed {
-        if !originalString.isEmpty {
+        // originalString = _bufferedString + delegate.composedString 이므로,
+        // removeLast 대상인 버퍼가 비어 있으면 건드리지 않는다(preedit-only 상태는 delegate가 처리해야 함).
+        if !_bufferedString.isEmpty {
           // 조합 중인 글자가 없을 때 backspace가 들어오면 조합이 완료된 글자 중 마지막 글자를 지운다.
           dlog(
             debugSearchComposer,
@@ -250,9 +275,7 @@ extension SearchComposer {
     showsCandidateWindow = false
     // 2. 후보 취소
     cancelSearch()
-    _searchLock.lock()
     candidates = nil
-    _searchLock.unlock()
 
     InputMethodServer.shared.candidates.hide()
 
@@ -264,34 +287,59 @@ extension SearchComposer {
     cancelComposition()
   }
 
-  func searchWorkItem(keyword: String, in source: SearchSource) -> DispatchWorkItem {
+  @discardableResult
+  func startSearch(
+    keyword: String,
+    in source: SearchSource,
+    initialCandidates: [NSAttributedString]? = nil
+  ) -> DispatchWorkItem {
     var workItem: DispatchWorkItem!
-    workItem = DispatchWorkItem {
+
+    _searchLock.lock()
+    _searchWorkItem.cancel()
+    _searchGeneration += 1
+    let generation = _searchGeneration
+
+    workItem = DispatchWorkItem { [weak self] in
+      guard let self = self else { return }
       let newCandidates = source.search(keyword, workItem: workItem)
-      guard !workItem.isCancelled else { return }
 
       self._searchLock.lock()
-      self.candidates = newCandidates
+      let isCurrent =
+        self._searchGeneration == generation
+        && self._searchWorkItem === workItem
+        && !workItem.isCancelled
+      if isCurrent {
+        self._candidates = newCandidates
+      }
       self._searchLock.unlock()
+      guard isCurrent else { return }
 
-      guard !workItem.isCancelled else { return }
-      DispatchQueue.main.async {
-        guard self.delegate != nil else {
-          return
-        }
-        guard !workItem.isCancelled else {
-          return
-        }
+      DispatchQueue.main.async { [weak self] in
+        guard let self = self else { return }
+        self._searchLock.lock()
+        let isCurrent =
+          self._searchGeneration == generation
+          && self._searchWorkItem === workItem
+          && !workItem.isCancelled
+        self._searchLock.unlock()
+        guard isCurrent, self.delegate != nil else { return }
         InputMethodServer.shared.showOrHideCandidates(composer: self)
       }
     }
+
+    _searchWorkItem = workItem
+    _candidates = initialCandidates
+    _searchLock.unlock()
+    _searchQueue.async(execute: workItem)
     return workItem
   }
 
   public func cancelSearch() {
-    if !_searchWorkItem.isCancelled {
-      _searchWorkItem.cancel()
-    }
+    _searchLock.lock()
+    defer { _searchLock.unlock() }
+    _searchWorkItem.cancel()
+    _searchGeneration += 1
   }
 
   /// 한자 입력을 위한 후보를 만든다.
@@ -311,14 +359,11 @@ extension SearchComposer {
     dlog(debugSearchComposer, "SearchComposer.updateHanjaCandidates() step3")
 
     let keyword = originalString.trimmingCharacters(in: .whitespaces)
-    cancelSearch()
-    candidates = [NSAttributedString(string: "검색 중...")]  // default candidates
 
     guard !keyword.isEmpty else {
       dlog(debugSearchComposer, "SearchComposer.updateHanjaCandidates() has no keywords")
-      _searchLock.lock()
+      cancelSearch()
       candidates = nil
-      _searchLock.unlock()
       return
     }
 
@@ -328,8 +373,10 @@ extension SearchComposer {
       keyword.count == 1
       ? SearchSourceConst.koreanSingle : SearchSourceConst.korean
 
-    _searchWorkItem = searchWorkItem(keyword: keyword, in: pool)
-    _searchQueue.async(execute: _searchWorkItem)
+    startSearch(
+      keyword: keyword,
+      in: pool,
+      initialCandidates: [NSAttributedString(string: "검색 중...")])
   }
 
   func updateEmojiCandidates() {
@@ -337,26 +384,22 @@ extension SearchComposer {
 
     // Step 1: 의존 합성기로부터 문자열 가져오기
     let dequeued = delegate.dequeueCommitString()
-    // Step 2: 문자열 보여주기
+    // Step 2: commit만 버퍼에 누적; preedit는 originalString 프로퍼티로 표시
     _bufferedString.append(dequeued)
-    _bufferedString.append(delegate.composedString)
-    let originalString = _bufferedString
     composedString = originalString
     let keyword = originalString
 
     dlog(debugSearchComposer, "Candidates before search, %@", candidates ?? "nil")
-    cancelSearch()
-    candidates = [NSAttributedString(string: "Searching...")]  // default candidates
     let pool = SearchSourceConst.emoji
 
-    _searchWorkItem = searchWorkItem(keyword: keyword, in: pool)
-
     if keyword.isEmpty {
-      _searchLock.lock()
+      cancelSearch()
       candidates = nil
-      _searchLock.unlock()
     } else {
-      _searchQueue.async(execute: _searchWorkItem)
+      startSearch(
+        keyword: keyword,
+        in: pool,
+        initialCandidates: [NSAttributedString(string: "Searching...")])
     }
     dlog(debugSearchComposer, "Candidates after search, %@", candidates ?? "nil")
   }

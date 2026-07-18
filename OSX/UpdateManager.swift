@@ -23,6 +23,25 @@ class UpdateManager {
       case description
       case url
     }
+
+    init(from decoder: Decoder) throws {
+      let container = try decoder.container(keyedBy: CodingKeys.self)
+      version = try container.decode(String.self, forKey: .version)
+      description = try container.decode(String.self, forKey: .description)
+      let urlString = try container.decode(String.self, forKey: .url)
+      // Defense-in-depth: only allow web schemes before any NSWorkspace.open.
+      guard let parsed = URL(string: urlString),
+        let scheme = parsed.scheme?.lowercased(),
+        scheme == "http" || scheme == "https"
+      else {
+        throw DecodingError.dataCorruptedError(
+          forKey: .url,
+          in: container,
+          debugDescription: "Update URL must use http or https scheme"
+        )
+      }
+      url = urlString
+    }
   }
 
   struct VersionInfo {
@@ -40,7 +59,7 @@ class UpdateManager {
       url = URL(string: "https://gureum.io/version-experimental.json")!
     }
     var urlRequest = URLRequest(url: url)
-    urlRequest.timeoutInterval = 1.0
+    urlRequest.timeoutInterval = 15.0
     urlRequest.cachePolicy = .reloadIgnoringCacheData
 
     let request = AF.request(urlRequest)
@@ -57,6 +76,7 @@ class UpdateManager {
 
   func requestAutoUpdateVersionInfo(_ done: @escaping ((VersionInfo?) -> Void)) {
     guard let mode = Configuration.shared.updateMode else {
+      done(nil)
       return
     }
     requestVersionInfo(mode: mode, done)
@@ -85,8 +105,14 @@ class UpdateManager {
       guard let info = info else {
         return
       }
-      guard info.update.version != info.current else {
-        return
+      // CFBundleVersion is dotted (e.g. 1.13.2); ignore -experimental/-rc for ordering.
+      // Notify only when remote is newer — inequality alone false-notifies on older remotes/dev builds.
+      if let current = info.current {
+        let remoteCore = String(info.update.version.prefix(while: { $0 != "-" }))
+        let currentCore = String(current.prefix(while: { $0 != "-" }))
+        guard remoteCore.compare(currentCore, options: .numeric) == .orderedDescending else {
+          return
+        }
       }
       UpdateManager.notifyUpdate(info: info)
     }

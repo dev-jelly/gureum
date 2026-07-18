@@ -11,7 +11,7 @@ import InputMethodKit
 
 let debugLogging = false
 let debugInputController = false
-let debugSpying = true
+let debugSpying = false
 
 //! @enum
 //! @brief  최종적으로 InputController가 처리할 결과
@@ -74,14 +74,21 @@ public class InputController: IMKInputController {
   }
 
   func asClient(_ sender: Any!) -> IMKTextInput & IMKUnicodeTextInput {
-    #if DEBUG
-      return sender as! (IMKTextInput & IMKUnicodeTextInput)
-    #else
-      guard let sender = sender as? (IMKTextInput & IMKUnicodeTextInput) else {
-        return client() as! (IMKTextInput & IMKUnicodeTextInput)
-      }
+    // IMK guarantees sender/client conform to IMKTextInput; init already required the
+    // IMKUnicodeTextInput intersection before constructing `receiver`.
+    if let sender = sender as? (IMKTextInput & IMKUnicodeTextInput) {
       return sender
+    }
+    #if DEBUG
+      assertionFailure(
+        "asClient: sender is not IMKTextInput & IMKUnicodeTextInput: \(String(describing: sender))"
+      )
     #endif
+    // Prefer typed fallbacks over `client() as!` (IUO / intersection cast can trap).
+    if let client = client() as? (IMKTextInput & IMKUnicodeTextInput) {
+      return client
+    }
+    return receiver.inputClient
   }
 
   #if DEBUG
@@ -160,20 +167,20 @@ extension InputController {  // IMKServerInputHandleEvent
       lastFlags = event.modifierFlags
 
       if changed.contains(.capsLock), Configuration.shared.enableCapslockToToggleInputMode {
-        if InputMethodServer.shared.io.capsLockTriggered {
+        if InputMethodServer.shared.io?.capsLockTriggered == true {
           dlog(debugIOKitEvent, "controller detected capslock to change layout")
           let toggle = { [weak self] in
             _ = self?.receiver.input(event: .changeLayout(.toggleByCapsLock, true), client: client)
           }
           toggle()
-          InputMethodServer.shared.io.rollback = toggle
+          InputMethodServer.shared.io?.rollback = toggle
         } else {
           dlog(debugIOKitEvent, "controller detected capslock")
-          (sender as! IMKTextInput).selectMode(receiver.composer.inputMode)
+          client.selectMode(receiver.composer.inputMode)
         }
       }
 
-      if InputMethodServer.shared.io.resolveRightKeyPressed() {
+      if InputMethodServer.shared.io?.resolveRightKeyPressed() == true {
         let result = receiver.input(event: .changeLayout(.toggleByRightKey, true), client: client)
         dlog(debugIOKitEvent, "controller detected right key")
         return result.processed
@@ -210,6 +217,9 @@ extension InputController {  // IMKStateSetting
 
   public override func activateServer(_ sender: Any!) {
     dlog(true, "server activated")
+    // Re-sync with hardware modifiers so a pre-existing CapsLock LED state
+    // is not treated as a transition on the first flagsChanged after activation.
+    lastFlags = NSEvent.modifierFlags
     super.activateServer(sender)
   }
 
@@ -236,7 +246,7 @@ extension InputController {  // IMKMouseHandling
 
 extension InputController {  // IMKCustomCommands
   public override func menu() -> NSMenu! {
-    return (NSApplication.shared.delegate! as! GureumApplicationDelegate).menu
+    return (NSApplication.shared.delegate as? GureumApplicationDelegate)?.menu
   }
 }
 
@@ -297,21 +307,6 @@ extension InputController {  // IMKServerInput
       receiver = InputReceiver(
         server: server, delegate: delegate, client: client as! (IMKTextInput & IMKUnicodeTextInput),
         controller: self)
-    }
-
-    func repoduceTextLog(_ text: String) throws {
-      for row in text.components(separatedBy: "\n") {
-        guard let regex = try? NSRegularExpression(pattern: "LOGGING::([A-Z]+)::(.*)", options: [])
-        else {
-          throw NSException(
-            name: NSExceptionName("MockInputControllerLogParserError"),
-            reason: "Log is not readable format", userInfo: nil) as! Error
-        }
-        let matches = regex.matches(in: row, options: [], range: NSRangeFromString(row))
-        let type = matches[1]
-        let data = matches[2]
-        print("test: \(type) \(data)")
-      }
     }
 
     override public func client() -> (IMKTextInput & NSObjectProtocol)! {

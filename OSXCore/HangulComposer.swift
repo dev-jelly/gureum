@@ -187,7 +187,7 @@ final class HangulComposer: NSObject, Composer {
   }
 
   func cancelComposition() {
-    let flushedString: String! = representableString(ucsString: inputContext.flushUCSString())
+    let flushedString = representableString(ucsString: inputContext.flushUCSString())
     _commitString.append(_composedString)
     _commitString.append(flushedString)
     _composedString = ""
@@ -232,14 +232,16 @@ final class HangulComposer: NSObject, Composer {
       return InputResult(processed: false, action: .commit)
     }
 
-    var string = string!
-    // 한글 입력에서 캡스락 무시
-    if flags.contains(.shift) {
-      string = keyMapUpper[keyCode.rawValue] ?? string
-    } else {
-      string = keyMapLower[keyCode.rawValue] ?? string
+    // 한글 입력에서 캡스락 무시 — keyMap 우선, 없으면 입력 문자열 사용
+    let mapped =
+      flags.contains(.shift)
+      ? keyMapUpper[keyCode.rawValue] : keyMapLower[keyCode.rawValue]
+    guard let string = mapped ?? string,
+      let scalar = string.unicodeScalars.first
+    else {
+      return InputResult(processed: false, action: .commit)
     }
-    let handled = inputContext.process(string.unicodeScalars.first!.value)
+    let handled = inputContext.process(scalar.value)
     let ucsString = inputContext.commitUCSString
     let recentCommitString = representableString(ucsString: ucsString)
 
@@ -277,7 +279,7 @@ final class HangulComposer: NSObject, Composer {
       if !handled {
         _commitString.append(recentCommitString + "₩")
         return .processed
-      } else if recentCommitString.last! == "`" {
+      } else if recentCommitString.last == "`" {
         _commitString.append(recentCommitString.dropLast() + "₩")
         return .processed
       }
@@ -300,13 +302,5 @@ extension HangulComposer {
     } else {
       inputContext.setKeyboardWithIdentifier(identifier)
     }
-  }
-
-  private func input(
-    controller _: InputController, command _: String?, key _: Int,
-    modifiers _: NSEvent.ModifierFlags, client _: Any
-  ) -> InputResult {
-    assertionFailure()
-    return .notProcessed
   }
 }

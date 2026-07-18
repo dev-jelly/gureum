@@ -4,7 +4,8 @@ set -o pipefail
 SCRIPT_DIR="$(dirname "$0")"
 cd "${SCRIPT_DIR}/.." || exit $?
 
-TMPSCRIPT="${TMPDIR}gureumbuild"
+TMPDIR="${TMPDIR:-/tmp}"
+TMPSCRIPT="${TMPDIR%/}/gureumbuild"
 
 if [ -e "${TMPSCRIPT}" ]; then
     echo "unexpected existing file: ${TMPSCRIPT}"

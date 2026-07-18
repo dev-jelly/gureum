@@ -186,20 +186,25 @@ final class FuseSearchSource: SearchSource {
     dlog(
       debugSearchComposer, "DEBUG 14, DelegatedComposer.updateEmojiCandidates() %@",
       source.debugDescription)
-    let searchResult = fuse.search(keyword, in: strings)
+    // fuse.search(_:in:[String]) is all-or-nothing; walk items so cancel can abort mid-scan.
+    let pattern = fuse.createPattern(from: keyword)
+    var results: [ScoredCandidate] = []
+    for (index, string) in strings.enumerated() {
+      guard !workItem.isCancelled else {
+        return []
+      }
+      guard let result = fuse.search(pattern, in: string) else {
+        continue
+      }
+      let word = source[index]
+      let candidate = Candidate(value: word.completion, description: word.description)
+      results.append(
+        (candidate: candidate, score: result.score + 0.0085 * Double(word.description.count)))
+    }
     dlog(
       debugSearchComposer,
       "DEBUG 5, DelegatedComposer.updateEmojiCandidates() after hanjasByPrefixSearching")
-
-    guard !workItem.isCancelled else {
-      return []
-    }
-    return searchResult.map {
-      result in
-      let word = source[result.index]
-      let candidate = Candidate(value: word.completion, description: word.description)
-      return (candidate: candidate, score: result.score + 0.0085 * Double(word.description.count))
-    }
+    return results
   }
 }
 

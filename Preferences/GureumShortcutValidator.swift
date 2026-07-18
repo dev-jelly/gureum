@@ -26,6 +26,7 @@ final class GureumShortcutValidator: MASShortcutValidator {
   }
 
   override func isShortcutValid(_ shortcut: MASShortcut!) -> Bool {
+    guard let shortcut = shortcut else { return false }
     if super.isShortcutValid(shortcut) {
       return true
     }

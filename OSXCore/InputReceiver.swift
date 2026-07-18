@@ -266,7 +266,7 @@ extension InputReceiver {  // IMKStateSetting
 
   //! @brief 자판 전환을 감지한다.
   func setValue(_ value: Any, forTag tag: Int, client sender: IMKTextInput & IMKUnicodeTextInput) {
-    InputMethodServer.shared.io.capsLockDate = nil
+    InputMethodServer.shared.io?.capsLockDate = nil
     dlog(debugLogging, "LOGGING::EVENT::CHANGE-%lu-%@", tag, value as? String ?? "(nonstring)")
     dlog(
       debugInputController,

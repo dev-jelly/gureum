@@ -10,6 +10,6 @@ import Foundation
 
 extension TISInputSource {
   override open var description: String {
-    "<(self.class.name)(((self.identifier)))>"
+    "<\(Swift.type(of: self))(\(identifier))>"
   }
 }

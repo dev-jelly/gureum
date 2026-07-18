@@ -10,8 +10,12 @@ import Cocoa
 
 // _ = NSApplicationMain(CommandLine.argc, CommandLine.unsafeArgv)
 
-let mainNibName = Bundle.main.infoDictionary!["NSMainNibFile"] as! String
-let nib = NSNib(nibNamed: NSNib.Name(mainNibName), bundle: Bundle.main)!
+guard let mainNibName = Bundle.main.infoDictionary?["NSMainNibFile"] as? String else {
+  fatalError("Gureum: Info.plist missing NSMainNibFile (String)")
+}
+guard let nib = NSNib(nibNamed: NSNib.Name(mainNibName), bundle: Bundle.main) else {
+  fatalError("Gureum: failed to load main nib '\(mainNibName)'")
+}
 if nib.instantiate(withOwner: NSApplication.shared, topLevelObjects: nil) == false {
   dlog(true, "!! Gureum fails to load Main Nib File !!")
 }
