@@ -1,3 +1,4 @@
+# Legacy macOS 10.13 compatibility stays on GitHub; Xcode 27 cannot target it.
 name: CI
 on:
   push:
@@ -5,6 +6,7 @@ on:
   merge_group:
 jobs:
   shellcheck:
+    if: github.event_name == 'merge_group' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -14,6 +16,7 @@ jobs:
           check_together: 'yes'
           scandir: 'tools'
   swift-format:
+    if: github.event_name == 'merge_group' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository)
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v7
